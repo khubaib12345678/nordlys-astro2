@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+
+/* Dark mode = a `.dark` class on <html> (set by the script in Layout.astro). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic colour tokens. Components use `bg-surface`, `text-muted`, etc.,
+   so a theme change is just a swap of these variables. */
+:root {
+  --bg: #f3f6f8;
+  --surface: #ffffff;
+  --ink: #0f1b26;
+  --muted: #55636f;
+  --line: #d7dee4;
+  --accent: #2457f5;
+  --accent-ink: #ffffff;
+  color-scheme: light;
+}
+.dark {
+  --bg: #0b141c;
+  --surface: #121e28;
+  --ink: #e8eef2;
+  --muted: #93a2ae;
+  --line: #223240;
+  --accent: #7d9bff;
+  --accent-ink: #0b141c;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --font-sans: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+html { scroll-behavior: smooth; scroll-padding-top: 5rem; }
+body { background: var(--bg); color: var(--ink); }
+
+/* The one orchestrated motion on the page: the hero panel settles in on load. */
+@keyframes settle { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.settle { animation: settle .7s cubic-bezier(.2,.7,.2,1) .15s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .settle { animation: none; }
+  * { transition-duration: 0s !important; }
+}
