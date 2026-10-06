@@ -1,0 +1,148 @@
+---
+/**
+ * ContactForm.astro - form UI + server-side handler.
+ *
+ * HOW IT WORKS
+ * 1. The browser POSTs the form to the current page (action="#contact").
+ * 2. This frontmatter runs on the server (Cloudflare edge) because the page
+ *    sets `export const prerender = false`.
+ * 3. We validate, then call Resend's REST API with fetch (no SDK = edge-safe).
+ * 4. We re-render the section with a success or error message.
+ *
+ * Without RESEND_API_KEY the handler runs in DEMO mode: it logs the email
+ * instead of sending, so the form can be shown with no credentials.
+ */
+import { RESEND_API_KEY, CONTACT_TO_EMAIL, CONTACT_FROM_EMAIL } from 'astro:env/server';
+
+type Status = { kind: 'idle' } | { kind: 'ok'; demo: boolean } | { kind: 'error'; message: string };
+type Fields = { name: string; email: string; company: string; message: string };
+
+let status: Status = { kind: 'idle' };
+let values: Fields = { name: '', email: '', company: '', message: '' };
+const fieldErrors: Partial<Record<keyof Fields, string>> = {};
+
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const get = (k: string) => String(data.get(k) ?? '').trim();
+    values = { name: get('name'), email: get('email'), company: get('company'), message: get('message') };
+
+    // Honeypot: real users never see this field, bots fill it. Pretend success.
+    if (get('website')) {
+      status = { kind: 'ok', demo: false };
+    } else {
+      // Server-side validation (never trust the browser's checks alone)
+      if (values.name.length < 2) fieldErrors.name = 'Enter your name.';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) fieldErrors.email = 'Enter a valid email address.';
+      if (values.message.length < 10) fieldErrors.message = 'Write at least 10 characters.';
+
+      if (Object.keys(fieldErrors).length) {
+        status = { kind: 'error', message: 'Please fix the highlighted fields.' };
+      } else if (!RESEND_API_KEY || !CONTACT_TO_EMAIL) {
+        // DEMO mode
+        console.log('[contact:demo] would send email', values);
+        status = { kind: 'ok', demo: true };
+      } else {
+        // Resend REST API: https://resend.com/docs/api-reference/emails/send-email
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: CONTACT_FROM_EMAIL,
+            to: [CONTACT_TO_EMAIL],
+            reply_to: values.email, // hitting "Reply" answers the visitor
+            subject: `New enquiry from ${values.name}`,
+            html: `<p><strong>${escapeHtml(values.name)}</strong> (${escapeHtml(values.email)})` +
+              `${values.company ? ' - ' + escapeHtml(values.company) : ''}</p>` +
+              `<p>${escapeHtml(values.message).replace(/\n/g, '<br>')}</p>`,
+          }),
+        });
+        if (!res.ok) {
+          console.error('[contact] Resend error', res.status, await res.text());
+          throw new Error('send failed');
+        }
+        status = { kind: 'ok', demo: false };
+      }
+    }
+  } catch {
+    status = { kind: 'error', message: 'Something went wrong on our side. Email us directly and we will reply.' };
+  }
+}
+
+// Shared input styling. `user-invalid:` only triggers AFTER the user has
+// interacted, so fields are not red on page load.
+const input =
+  'w-full rounded-lg border border-line bg-surface px-4 py-3 text-ink placeholder:text-muted/70 transition-colors ' +
+  'focus:border-accent focus:outline-2 focus:outline-accent/30 user-invalid:border-red-500 user-invalid:outline-red-500/30';
+const sent = status.kind === 'ok';
+---
+
+<section id="contact" class="border-t border-line">
+  <div class="mx-auto grid max-w-6xl gap-12 px-6 py-24 lg:grid-cols-5">
+    <div class="lg:col-span-2">
+      <h2 class="text-3xl font-semibold tracking-tight sm:text-4xl">Tell us about your site</h2>
+      <p class="mt-4 max-w-md text-muted">
+        Send the Webflow URL and what you want to change. You get a reply from an engineer within one working day.
+      </p>
+    </div>
+
+    <div class="lg:col-span-3">
+      {sent ? (
+        <div role="status" class="rounded-2xl border border-accent bg-surface p-8">
+          <h3 class="text-xl font-semibold">Message sent</h3>
+          <p class="mt-2 text-muted">
+            Thanks, {values.name || 'friend'}. We will reply to {values.email || 'your email'} within one working day.
+            {status.kind === 'ok' && status.demo && ' (Demo mode: no email was sent because RESEND_API_KEY is not set.)'}
+          </p>
+        </div>
+      ) : (
+        <form method="POST" action="#contact" class="space-y-5" id="contact-form">
+          {status.kind === 'error' && (
+            <p role="alert" class="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm">{status.message}</p>
+          )}
+
+          <div class="grid gap-5 sm:grid-cols-2">
+            <div>
+              <label for="name" class="mb-2 block text-sm font-medium">Name</label>
+              <input id="name" name="name" required minlength="2" autocomplete="name" value={values.name} class={input} aria-invalid={fieldErrors.name ? 'true' : undefined} />
+              {fieldErrors.name && <p class="mt-1 text-sm text-red-500">{fieldErrors.name}</p>}
+            </div>
+            <div>
+              <label for="email" class="mb-2 block text-sm font-medium">Email</label>
+              <input id="email" name="email" type="email" required autocomplete="email" value={values.email} class={input} aria-invalid={fieldErrors.email ? 'true' : undefined} />
+              {fieldErrors.email && <p class="mt-1 text-sm text-red-500">{fieldErrors.email}</p>}
+            </div>
+          </div>
+
+          <div>
+            <label for="company" class="mb-2 block text-sm font-medium">Company <span class="text-muted">(optional)</span></label>
+            <input id="company" name="company" autocomplete="organization" value={values.company} class={input} />
+          </div>
+
+          <div>
+            <label for="message" class="mb-2 block text-sm font-medium">Message</label>
+            <textarea id="message" name="message" rows="5" required minlength="10" class={input} aria-invalid={fieldErrors.message ? 'true' : undefined}>{values.message}</textarea>
+            {fieldErrors.message && <p class="mt-1 text-sm text-red-500">{fieldErrors.message}</p>}
+          </div>
+
+          <!-- Honeypot: hidden from people and screen readers -->
+          <div class="absolute -left-[9999px]" aria-hidden="true">
+            <label>Website <input name="website" tabindex="-1" autocomplete="off" /></label>
+          </div>
+
+          <button type="submit" class="rounded-full bg-accent px-7 py-3 font-medium text-accent-ink transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+            Send message
+          </button>
+        </form>
+      )}
+    </div>
+  </div>
+</section>
+
+<script>
+  // Stops "Confirm form resubmission" if the visitor refreshes after sending.
+  if (history.replaceState) history.replaceState(null, '', location.href);
+</script>

@@ -1,0 +1,69 @@
+---
+/**
+ * Layout.astro - the HTML shell every page shares.
+ * Responsibilities: <head> SEO tags, self-hosted font, global CSS,
+ * and the no-flash theme script.
+ */
+import '@fontsource-variable/schibsted-grotesk'; // self-hosted: no Google Fonts request
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** Absolute URL to a 1200x630 social image (optional). */
+  image?: string;
+}
+
+const {
+  title,
+  description = 'Nordlys builds fast, accessible websites with Astro. We migrate Webflow sites without losing a pixel of the design.',
+  image,
+} = Astro.props;
+
+// Needs `site` in astro.config.mjs for absolute URLs; falls back to the request URL.
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
+---
+
+<!doctype html>
+<html lang="en" class="antialiased">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="color-scheme" content="light dark" />
+
+    <!-- Open Graph / Twitter -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    {image && <meta property="og:image" content={image} />}
+    <meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
+
+    <!--
+      Theme bootstrap. `is:inline` stops Astro bundling it, so it runs
+      synchronously in <head> and sets the class BEFORE first paint (no flash).
+      Order of precedence: saved choice -> OS preference.
+    -->
+    <script is:inline>
+      (function () {
+        var saved = null;
+        try { saved = localStorage.getItem('theme'); } catch (e) {}
+        var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', dark);
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen font-sans text-base/relaxed">
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-accent focus:px-4 focus:py-2 focus:text-accent-ink"
+    >
+      Skip to content
+    </a>
+    <slot />
+  </body>
+</html>
